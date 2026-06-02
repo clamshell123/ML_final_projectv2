@@ -22,7 +22,7 @@
 
 ---
 
-## 🔴 核心原則對齐表（instruction.md 不可違反指令）
+## 🔴 核心原則對齊表（instruction.md 不可違反指令）
 
 此表總結 instruction.md 的**四大鐵律**與其在 project.md 中的具體映射。所有開發、分析、報告工作均須嚴格遵循。
 
@@ -522,9 +522,9 @@ def project_contract(
 
 ### Phase 1：環境建置 & 資料收集（Day 1）
 
-- [ ] 建立 GitHub Repo，設定 `.gitignore`、`README.md`
-- [ ] 建立 `requirements.txt` / `environment.yml`
-- [ ] 資料夾結構初始化：
+- [X] 建立 GitHub Repo，設定 `.gitignore`、`README.md`
+- [X] 建立 `requirements.txt` / `environment.yml`
+- [X] 資料夾結構初始化：
 
   ```
   nba-salary-valuation/
@@ -543,7 +543,7 @@ def project_contract(
   └── tests/
   ```
 
-- [ ] **薪資資料**：下載 Kaggle (2011–2026)，確認欄位（player, season, salary, team）
+- [ ] **薪資資料**：Spotrac 爬取，確認欄位（player, season, salary, team）
 - [ ] **薪資帽歷史**：爬取 B-Ref，計算 `pct_of_cap = salary / salary_cap` 欄位
 - [ ] **球員統計**：下載 B-Ref totals + advanced stats（2011–2026）
   - 確認欄位覆蓋：PTS, AST, REB, BLK, STL, TOV, PER, VORP, BPM, WS, 3PAr, TS%

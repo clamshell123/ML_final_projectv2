@@ -6,8 +6,8 @@
 
 ## 📊 已收集資料源
 
-### 1. Kaggle: NBA Player Stats and Salaries 2010-2025
-- **來源**: https://www.kaggle.com/datasets/ratin21/nba-player-stats-and-salaries-2010-2025
+### 1. Sotrac: NBA player Contract
+- **來源**: 
 - **路徑**: `data/raw/kaggle_nba_stats/`
 - **用途**: 主要薪資 + 基礎統計資料 (2011-2026)
 - **預期欄位**:
