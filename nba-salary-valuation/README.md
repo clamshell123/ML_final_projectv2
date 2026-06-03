@@ -3,14 +3,14 @@
 ## 🎯 Project Overview
 
 This project builds an **Explainable AI (XAI) decision support system** for NBA front-office executives (GMs) to:
-1. **Cross-era valuation (Past-to-Present)**: Calculate equivalent salary for historical players in modern salary cap terms
-2. **Pure skill extraction**: Isolate basketball value from market noise using SHAP explainability
-3. **Future contract projections**: Apply CBA 10% salary cap growth rule to multi-year forecasting
+1. **Cross-era valuation (Past-to-Present)**: Calculate equivalent salary for historical players in modern salary cap terms.
+2. **Pure skill extraction**: Isolate basketball value from market noise using SHAP explainability.
+3. **Future contract projections**: Apply CBA 10% salary cap growth rule to multi-year forecasting.
 
 ## 🏗️ Architecture
 
 ```
-Data Collection (Kaggle/B-Ref)
+Data Collection (Kaggle/B-Ref/Spotrac)
          ↓
 Data Cleaning & Feature Engineering
          ↓

@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
-warnings.filterfilterwarnings('ignore')
+warnings.filterwarnings('ignore')
 
 # Set up plotting style
 plt.style.use('seaborn-v0_8')
