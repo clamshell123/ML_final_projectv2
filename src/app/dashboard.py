@@ -10,9 +10,32 @@ st.title("🏀 NBA 跨時空 Moneyball 薪資模擬器")
 st.markdown("透過 XGBoost 與 SHAP 剝離歷史市場雜訊，將球員的「純粹籃球實力」無縫轉換至現代或未來的薪資體系。")
 st.divider()
 
-# ── 核心邏輯：CBA 10% 薪資帽預測 ─────────────────────────────────────────────
+# ── 核心邏輯：動態讀取歷史薪資帽與 CBA 10% 推算 ─────────────────────────────
+@st.cache_data
 def get_salary_cap(target_year):
+    # 1. 取得當前檔案 (dashboard.py) 的絕對路徑
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 2. 回溯到專案根目錄 (從 src/app 往上兩層)
+    project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
+    csv_path = os.path.join(project_root, "data", "external", "salary_cap_history.csv")
+    
+    # 備用/基準薪資帽字典 (Fallback)
     base_caps = {2022: 123655000, 2023: 136021000, 2024: 141000000}
+    
+    # 嘗試從 CSV 抓取真實歷史數據
+    if os.path.exists(csv_path):
+        try:
+            df_cap = pd.read_csv(csv_path)
+            # 尋找對應年份的資料 (假設 CSV 欄位名稱包含 year / target_year / season 等字眼，這裡做彈性比對)
+            # 為了確保相容性，我們比對第一欄(年份)並抓取第二欄(薪資帽)
+            match = df_cap[df_cap.iloc[:, 0] == target_year]
+            if not match.empty:
+                # 成功從 CSV 找到歷史真實薪資帽
+                return float(match.iloc[0, 1])
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ 讀取薪資帽檔案時發生小錯誤，將使用系統預設值。({e})")
+
+    # 若 CSV 找不到、裡面沒該年份資料，或是未來的年份，套用以下邏輯
     if target_year in base_caps:
         return base_caps[target_year]
     elif target_year > 2024:
