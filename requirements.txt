@@ -1,5 +1,4 @@
 streamlit
 pandas
-supabase
-xgboost
-scikit-learn
+sqlalchemy
+psycopg2-binary
