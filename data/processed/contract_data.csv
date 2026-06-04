@@ -39,7 +39,7 @@ jamychal green,2,1,2017,0.0861
 nikola mirotic,1,1,2017,0.1261
 shelvin mack,2,0,2017,0.0605
 amir johnson,1,0,2017,0.111
-nene hilario,3,1,2017,0.0351
+nene,3,1,2017,0.0351
 ben mclemore,2,0,2017,0.0525
 thabo sefolosha,2,0,2017,0.053
 mike muscala,2,1,2017,0.0504999999999999
@@ -81,7 +81,7 @@ jose calderon,1,0,2017,0.0148
 jarrett jack,1,0,2017,0.0148
 dante cunningham,1,1,2017,0.0232
 michael beasley,1,0,2017,0.0148
-luc richard mbah a moute,1,0,2017,0.0148
+luc mbah a moute,1,0,2017,0.0148
 marreese speights,1,0,2017,0.0148
 aaron brooks,1,0,2017,0.0148
 javale mcgee,1,1,2017,0.0148
@@ -91,7 +91,7 @@ mike scott,1,0,2017,0.0148
 ian clark,1,0,2017,0.0148
 shane larkin,1,0,2017,0.0148
 jordan mickey,1,0,2017,0.0148
-marcus georgeshunt,1,0,2017,0.0132
+marcus georges hunt,1,0,2017,0.0132
 mario chalmers,1,0,2017,0.0148
 chris paul,4,1,2018,0.35
 lebron james,4,0,2018,0.35
@@ -237,7 +237,7 @@ rodney mcgruder,3,1,2019,0.0441
 kevon looney,3,1,2019,0.0409
 darius miller,2,1,2019,0.0664
 jabari parker,2,0,2019,0.0596
-ishmael smith,2,0,2019,0.055
+ish smith,2,0,2019,0.055
 dorian finneysmith,3,1,2019,0.0366999999999999
 rodney hood,2,1,2019,0.0524
 jake layman,3,0,2019,0.0327999999999999
@@ -263,7 +263,7 @@ ryan arcidiacono,2,1,2019,0.0275
 alex caruso,2,1,2019,0.0252
 wesley matthews,2,0,2019,0.0235
 rajon rondo,2,1,2019,0.0235
-vincent poirier,2,0,2019,0.023
+vince poirier,2,0,2019,0.023
 frank kaminsky,1,0,2019,0.0437
 garrett temple,1,0,2019,0.0437
 justin holiday,1,0,2019,0.0437
@@ -276,7 +276,7 @@ edmond sumner,2,1,2019,0.0183
 james ennis,2,1,2019,0.0173
 furkan korkmaz,2,1,2019,0.0148
 wilson chandler,1,0,2019,0.0148
-jose barea,1,1,2019,0.0148
+jj barea,1,1,2019,0.0148
 jared dudley,1,0,2019,0.0148
 kyle korver,1,0,2019,0.0148
 thabo sefolosha,1,0,2019,0.0148
@@ -298,7 +298,7 @@ raul neto,1,0,2019,0.0148
 jakarr sampson,1,0,2019,0.0148
 timothe luwawucabarrot,1,0,2019,0.006
 cheick diallo,1,0,2019,0.0154
-pj dozier,1,0,2019,0.0017
+p j dozier,1,0,2019,0.0017
 brad wanamaker,1,1,2019,0.0132
 theo pinson,1,1,2019,0.0132
 shaquille harrison,1,1,2019,0.0081999999999999
@@ -322,7 +322,7 @@ derrick favors,3,0,2020,0.0848
 dario saric,3,1,2020,0.0848
 jakob poeltl,3,1,2020,0.0742
 mason plumlee,3,0,2020,0.0733
-juancho hernangomez,3,1,2020,0.0595
+juan hernangomez,3,1,2020,0.0595
 dj augustin,3,0,2020,0.0611
 rodney hood,2,1,2020,0.0921
 tristan thompson,2,0,2020,0.0848
@@ -441,7 +441,7 @@ kendrick nunn,2,0,2021,0.0445
 taj gibson,2,1,2021,0.0437
 cory joseph,2,1,2021,0.0437
 torrey craig,2,0,2021,0.0434
-ishmael smith,2,0,2021,0.04
+ish smith,2,0,2021,0.04
 maurice harkless,2,1,2021,0.0387
 jeff green,2,0,2021,0.04
 bobby portis,2,1,2021,0.0387
@@ -458,10 +458,10 @@ nicolas batum,2,1,2021,0.0282
 jordan mclaughlin,3,1,2021,0.0178
 frank jackson,2,1,2021,0.0266999999999999
 sterling brown,2,0,2021,0.0266999999999999
-dennis schröder,1,0,2021,0.0524
+dennis schroder,1,0,2021,0.0524
 saben lee,3,1,2021,0.0132
 trey lyles,2,0,2021,0.0222
-louis williams,1,1,2021,0.0445
+lou williams,1,1,2021,0.0445
 javale mcgee,1,0,2021,0.0445
 robin lopez,1,0,2021,0.0445
 bruce brown,1,1,2021,0.0421
@@ -536,7 +536,7 @@ gary payton,3,0,2022,0.0670999999999999
 nicolas batum,2,1,2022,0.0877
 kevon looney,3,1,2022,0.0566
 jaesean tate,3,1,2022,0.0571
-mohamed bamba,2,1,2022,0.0833
+mo bamba,2,1,2022,0.0833
 caleb martin,3,1,2022,0.0524
 malik monk,2,0,2022,0.0766
 ricky rubio,3,0,2022,0.0473
@@ -585,7 +585,7 @@ bismack biyombo,1,1,2022,0.0148
 goran dragic,1,0,2022,0.0032
 deandre jordan,1,0,2022,0.0148
 gorgui dieng,1,0,2022,0.005
-dennis schröder,1,0,2022,0.0148
+dennis schroder,1,0,2022,0.0148
 tj warren,1,0,2022,0.0148
 jamychal green,1,0,2022,0.0148
 matthew dellavedova,1,0,2022,0.0148
@@ -604,7 +604,7 @@ juan toscanoanderson,1,0,2022,0.0148
 anthony lamb,1,0,2022,0.002
 bruno fernando,1,1,2022,0.022
 david duke,1,1,2022,0.0002
-ishmail wainright,1,1,2022,0.0038
+ish wainright,1,1,2022,0.0038
 admiral schofield,1,1,2022,0.0040999999999999
 jerami grant,5,1,2023,0.2028
 fred vanvleet,3,0,2023,0.3
@@ -617,7 +617,7 @@ dillon brooks,4,0,2023,0.1664
 jakob poeltl,4,1,2023,0.1434
 max strus,4,0,2023,0.1065
 austin reaves,4,1,2023,0.0883
-herb jones,4,1,2023,0.0883
+herbert jones,4,1,2023,0.0883
 grant williams,4,0,2023,0.0911999999999999
 rui hachimura,3,1,2023,0.1157
 brook lopez,2,1,2023,0.1838
@@ -631,7 +631,7 @@ gabe vincent,3,0,2023,0.0771999999999999
 caris levert,2,1,2023,0.1131
 jock landale,4,0,2023,0.0588
 georges niang,3,0,2023,0.0647
-dennis schröder,2,0,2023,0.0911999999999999
+dennis schroder,2,0,2023,0.0911999999999999
 paul reed,3,1,2023,0.0567999999999999
 joe ingles,2,0,2023,0.0809
 ayo dosunmu,3,1,2023,0.0476999999999999
@@ -693,7 +693,7 @@ dennis smith,1,0,2023,0.0148
 chimezie metu,1,0,2023,0.0016
 thanasis antetokounmpo,1,1,2023,0.0148
 lonnie walker,1,0,2023,0.0148
-mohamed bamba,1,0,2023,0.0148
+mo bamba,1,0,2023,0.0148
 aaron holiday,1,0,2023,0.0148
 sviatoslav mykhailiuk,1,0,2023,0.0148
 darius bazley,1,0,2023,0.0037
@@ -824,7 +824,7 @@ rudy gobert,4,1,2017,0.2218
 giannis antetokounmpo,4,1,2017,0.2268
 steven adams,4,1,2017,0.2268
 victor oladipo,4,1,2017,0.2119
-dennis schröder,4,1,2017,0.1564
+dennis schroder,4,1,2017,0.1564
 gorgui dieng,4,1,2017,0.1424
 cody zeller,4,1,2017,0.127
 russell westbrook,5,1,2018,0.35
@@ -835,7 +835,7 @@ tj warren,4,1,2018,0.1153
 robert covington,4,1,2018,0.1027
 josh richardson,4,1,2018,0.092
 norman powell,4,1,2018,0.092
-louis williams,3,1,2018,0.0785
+lou williams,3,1,2018,0.0785
 james harden,4,1,2019,0.35
 john wall,4,1,2019,0.35
 devin booker,5,1,2019,0.25

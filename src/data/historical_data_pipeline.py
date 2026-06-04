@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import re
 import logging
+import unicodedata
+import os
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -11,41 +13,110 @@ logger = logging.getLogger(__name__)
 # 階段一：資料清洗 (Data Cleaning)
 # ==========================================
 def clean_player_names(df: pd.DataFrame, name_col: str = 'Player') -> pd.DataFrame:
-    """執行名稱正規化 (Regex)"""
+    """執行名稱正規化 (Regex + Unicode 去重音 + 亂碼防禦)"""
     df = df.copy()
 
     def normalize_name(name):
-        if pd.isna(name):
-            return name
+        if pd.isna(name): return name
         name = str(name).lower()
+        
+        # 🚨 [亂碼修復] 攔截東歐姓氏常出現的亂碼特徵，以及全明星星號
+        name = name.replace('*', '')
+        name = name.replace('viä', 'vic')
+        name = name.replace('kiä', 'kic')
+        name = name.replace('äiä', 'cic')
+        name = name.replace('å ', 's ')
+        
+        # 將 Unicode 字元分解，並過濾掉附加符號
+        name = ''.join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
+        
+        # 移除了重音後，再過濾掉標點符號與特殊字元
         name = re.sub(r'[^\w\s]', '', name)
+        # 移除 Jr., Sr., III 等後綴
         name = re.sub(r' (jr|sr|ii|iii|iv)$', '', name)
+        
         return name.strip()
 
     df[name_col] = df[name_col].apply(normalize_name)
     
+    # 手動 mapping 處理綽號與亂碼特例
     name_mapping = {
         'nicolas claxton': 'nic claxton',
         'marcus morris sr': 'marcus morris',
-        'kelly oubre': 'kelly oubre jr' 
+        'kelly oubre': 'kelly oubre jr',
+        'nene hilario': 'nene',
+        'luc richard mbah a moute': 'luc mbah a moute',
+        'marcus georgeshunt': 'marcus georges hunt',
+        'dario aria': 'dario saric',
+        'luka donaia': 'luka doncic',
+        'ishmael smith': 'ish smith',
+        'jose barea': 'jj barea',
+        'louis williams': 'lou williams',
+        'mohamed bamba': 'mo bamba',
+        'ishmail wainright': 'ish wainright',
+        'herb jones': 'herbert jones',
+        'juancho hernangomez': 'juan hernangomez',
+        'vincent poirier': 'vince poirier',
+        'pj dozier': 'p j dozier',
+        'michael porter': 'michael porter jr'
     }
     df[name_col] = df[name_col].replace(name_mapping)
     return df
 
+
+def resolve_traded_players(df: pd.DataFrame) -> pd.DataFrame:
+    """處理季中交易球員 (2TM, 3TM, TOT)，保留總數據並換上季末球隊"""
+    df = df.copy()
+    multi_team_labels = ['TOT', '2TM', '3TM', '4TM', '5TM']
+    indices_to_keep = []
+    
+    for (player, year), group in df.groupby(['Player', 'year']):
+        tot_rows = group[group['Team'].isin(multi_team_labels)]
+        
+        if not tot_rows.empty:
+            tot_idx = tot_rows.index[0]
+            team_rows = group[~group['Team'].isin(multi_team_labels)]
+            
+            if not team_rows.empty:
+                # 抓取該季最後效力的球隊
+                final_team = team_rows['Team'].iloc[-1]
+                df.loc[tot_idx, 'Team'] = final_team
+                
+            indices_to_keep.append(tot_idx)
+        else:
+            indices_to_keep.extend(group.index.tolist())
+            
+    df_cleaned = df.loc[indices_to_keep].reset_index(drop=True)
+    return df_cleaned
+
+
 def clean_stats_data(df: pd.DataFrame, min_games: int = 10) -> pd.DataFrame:
-    """專屬 B-Ref 統計數據的清洗邏輯"""
+    """專屬 B-Ref 統計數據的清洗邏輯 (強化型別防護)"""
     df = df.copy()
     df = clean_player_names(df, 'Player')
 
     if 'Player' in df.columns:
         df = df[df['Player'] != 'Player']
 
+    # 確保 year 欄位絕對是整數
+    if 'year' in df.columns:
+        df['year'] = pd.to_numeric(df['year'], errors='coerce').fillna(0).astype(int)
+
+    # 🚨 [修正重點]：在篩選出場數之前，先解決季中交易球員！
+    if 'Team' in df.columns:
+        df = resolve_traded_players(df)
+
     id_cols = ['Player', 'Team', 'Pos', 'Awards', 'Season', 'Type', 'year']
     numeric_cols = [col for col in df.columns if col not in id_cols]
+    
     for col in numeric_cols:
         if col in df.columns:
+            # 移除字串中可能干擾轉換的星號、逗號或空白
+            if df[col].dtype == object:
+                df[col] = df[col].astype(str).str.replace(r'[\*\,]', '', regex=True)
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
+    # 🚨 在交易合併後，才執行出場數過濾，確保主力不被誤刪
     if 'G' in df.columns:
         df = df[df['G'] >= min_games]
 
@@ -60,7 +131,7 @@ def clean_stats_data(df: pd.DataFrame, min_games: int = 10) -> pd.DataFrame:
 # 階段二：資料合併與時間加權 (針對歷史推論)
 # ==========================================
 def compute_weighted_stats(df: pd.DataFrame, player: str, target_year: int, default_weights: list = [0.2, 0.3, 0.5]) -> pd.Series:
-    """回傳球員在 target_year 及前兩年的加權平均數據 (支援動態權重補缺)"""
+    """回傳球員在 target_year 及前兩年的加權平均數據 (安全加權版)"""
     id_cols = ['Player', 'year', 'Team', 'Pos', 'Age'] 
     stat_cols = [c for c in df.columns if c not in id_cols]
     numeric_stat_cols = df[stat_cols].select_dtypes(include=[np.number]).columns
@@ -68,45 +139,49 @@ def compute_weighted_stats(df: pd.DataFrame, player: str, target_year: int, defa
     years_needed = [target_year - 2, target_year - 1, target_year]
     available_data = []
 
-    # 1. 收集這三年內確實存在的數據
     for y in years_needed:
         sub = df[(df['Player'] == player) & (df['year'] == y)]
         if not sub.empty:
-            available_data.append((y, sub[numeric_stat_cols].iloc[0]))
+            series_data = sub[numeric_stat_cols].iloc[0].copy()
+            series_data.name = None
+            available_data.append((y, series_data))
         else:
             available_data.append((y, None))
 
-    # 2. 如果目標年份 (target_year) 本身就沒打球，直接回傳 NaN
     if available_data[-1][1] is None:
         return pd.Series([np.nan] * len(numeric_stat_cols), index=numeric_stat_cols)
 
-    # 3. 動態重新分配權重
-    # 抓出有資料的對應權重，並計算總和
     valid_weights = [default_weights[i] for i in range(3) if available_data[i][1] is not None]
     weight_sum = sum(valid_weights)
 
     weighted = pd.Series(0.0, index=numeric_stat_cols)
     for i, (y, data_series) in enumerate(available_data):
         if data_series is not None:
-            # 正規化權重 (例如只有前一年跟當年，原本 0.3 和 0.5 會放大為 0.375 與 0.625)
             normalized_weight = default_weights[i] / weight_sum
-            weighted += normalized_weight * data_series
+            weighted = weighted.add(data_series * normalized_weight, fill_value=0)
             
     return weighted
 
+
 def merge_historical_stats(stats_reg_df: pd.DataFrame, stats_playoff_df: pd.DataFrame) -> pd.DataFrame:
-    """直接以例行賽出現的 (Player, Year) 為基準進行資料合併，不再依賴合約表"""
+    """以例行賽出現的 (Player, Year) 為基準進行資料合併"""
     enriched_rows = []
-    
-    # 取得所有獨一無二的 (球員, 年份) 組合
     unique_player_years = stats_reg_df[['Player', 'year']].drop_duplicates()
 
     for _, row in unique_player_years.iterrows():
         player = row['Player']
         yr = int(row['year'])
         
+        # 🚨 [修正重點]：抓出 Age 的同時，一併抓出 Team 和 Pos 供模型編碼使用
         age_sub = stats_reg_df[(stats_reg_df['Player'] == player) & (stats_reg_df['year'] == yr)]
-        age = age_sub['Age'].iloc[0] if not age_sub.empty else np.nan
+        if not age_sub.empty:
+            age = age_sub['Age'].iloc[0]
+            team = age_sub['Team'].iloc[0]
+            pos = age_sub['Pos'].iloc[0]
+        else:
+            age = np.nan
+            team = 'Unknown'
+            pos = 'Unknown'
 
         wt_reg = compute_weighted_stats(stats_reg_df, player, yr)
         wt_playoff = compute_weighted_stats(stats_playoff_df, player, yr)
@@ -120,9 +195,10 @@ def merge_historical_stats(stats_reg_df: pd.DataFrame, stats_playoff_df: pd.Data
         wt_reg = wt_reg.add_suffix('_reg')
         wt_playoff = wt_playoff.add_suffix('_playoff')
 
-        # [修正重點]：移除 YRS 與 Cap_Pct，加入 is_retained 預設值防止模型報錯
         new_row = {
             'Player': player,
+            'Team': team,  # 補上 Team
+            'Pos': pos,    # 補上 Pos
             'year': yr,
             'age': age,
             'has_playoff_exp': has_playoff_exp,
@@ -183,8 +259,9 @@ def run_data_pipeline(raw_reg_stats: pd.DataFrame, raw_playoff_stats: pd.DataFra
     logger.info("開始執行 NBA 歷史資料工程管線...")
     
     logger.info("1/3 執行資料清洗...")
-    clean_reg = clean_stats_data(raw_reg_stats)
-    clean_playoff = clean_stats_data(raw_playoff_stats)
+    # 🚨 [修正重點]：常規賽與季後賽門檻分流
+    clean_reg = clean_stats_data(raw_reg_stats, min_games=10)
+    clean_playoff = clean_stats_data(raw_playoff_stats, min_games=2)
     
     logger.info("2/3 執行時間加權與資料合併...")
     merged_df = merge_historical_stats(clean_reg, clean_playoff)
@@ -192,8 +269,8 @@ def run_data_pipeline(raw_reg_stats: pd.DataFrame, raw_playoff_stats: pd.DataFra
     logger.info("3/3 執行進階特徵工程...")
     final_df = create_interaction_features(merged_df)
     
-    # 重新排序，將目標拿掉，留下元資料在最前面
-    meta_cols = ['Player', 'year', 'age', 'has_playoff_exp', 'is_retained']
+    # 🚨 [修正重點]：將 Team 和 Pos 納入元資料保護區，確保它們出現在最前面
+    meta_cols = ['Player', 'Team', 'Pos', 'year', 'age', 'has_playoff_exp', 'is_retained']
     feature_cols = [c for c in final_df.columns if c not in meta_cols]
     final_df = final_df[meta_cols + sorted(feature_cols)]
     
@@ -201,15 +278,20 @@ def run_data_pipeline(raw_reg_stats: pd.DataFrame, raw_playoff_stats: pd.DataFra
     return final_df
 
 if __name__ == "__main__":
-    # 讀取剛剛用爬蟲抓下來的歷史資料
     logger.info("載入原始資料中...")
-    raw_reg = pd.read_csv('../../data/raw/history_stats_reg.csv')
-    raw_playoff = pd.read_csv('../../data/raw/history_stats_playoff.csv')
+    
+    # 請確保此路徑與你的專案結構一致
+    raw_reg = pd.read_csv('../../data/raw/history_stats_reg.csv', encoding='utf-8')
+    raw_playoff = pd.read_csv('../../data/raw/history_stats_playoff.csv', encoding='utf-8')
 
     # 執行管線
     final_dataset = run_data_pipeline(raw_reg, raw_playoff)
     
     # 將處理好的特徵矩陣存檔，準備餵給 batch_inference.py
     output_path = '../../data/processed/historical_legends_features.csv'
-    final_dataset.to_csv(output_path, index=False)
+    
+    # 確保資料夾存在
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    final_dataset.to_csv(output_path, index=False, encoding='utf-8-sig')
     logger.info(f"已將推論用特徵資料庫存至: {output_path}")

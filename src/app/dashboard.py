@@ -1,176 +1,238 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import os
-import json
-from sqlalchemy import create_engine
-import plotly.graph_objects as go
+import pickle
+import shap
+import matplotlib.pyplot as plt
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
-# ── 頁面基本設定 ───────────────────────────────────────────────────────────────
-st.set_page_config(page_title="NBA 跨時空薪資模擬器", page_icon="🏀", layout="wide")
+# ==========================================
+# 0. 頁面基本設定與常數定義
+# ==========================================
+st.set_page_config(
+    page_title="NBA 跨時空 Moneyball 薪資模擬器",
+    page_icon="🏀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("🏀 NBA 跨時空 Moneyball 薪資模擬器")
-st.markdown("透過 XGBoost 與 SHAP 剝離歷史市場雜訊，將球員的「純粹籃球實力」無縫轉換至現代或未來的薪資體系。")
-st.divider()
+# 各年度薪資帽 (美金)
+SALARY_CAPS = {
+    2023: 136021000,
+    2024: 140588000,
+    2025: 155122000,
+    2026: 170814000  # 依據最新 CBA 預估
+}
 
-# ── 核心邏輯：動態讀取歷史薪資帽與 CBA 10% 推算 ─────────────────────────────
-@st.cache_data
-def get_salary_cap(target_year):
+# 現代 NBA 30 支球隊縮寫
+NBA_TEAMS = sorted([
+    "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW",
+    "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN", "NOP", "NYK",
+    "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS"
+])
+
+# ==========================================
+# 1. 初始化與快取讀取 (Supabase & Models)
+# ==========================================
+@st.cache_resource
+def init_supabase() -> Client:
+    # 嘗試從環境變數或 Streamlit secrets 讀取
+    load_dotenv()
+    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    if not url or not key:
+        st.error("請在 .env 或 st.secrets 設定 SUPABASE_URL 與 SUPABASE_KEY")
+        st.stop()
+    return create_client(url, key)
+
+@st.cache_resource
+def load_models():
+    # 取得 dashboard.py 當前所在的資料夾路徑 (例如: .../src/app)
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
-    csv_path = os.path.join(project_root, "data", "external", "salary_cap_history.csv")
     
-    base_caps = {2022: 123655000, 2023: 136021000, 2024: 141000000}
+    # 假設 1：dashboard.py 在 src/app/ 底下，我們要往上一層到 src/，再進 models/
+    models_dir = os.path.abspath(os.path.join(current_dir, '..', 'models'))
     
-    if os.path.exists(csv_path):
-        try:
-            df_cap = pd.read_csv(csv_path)
-            match = df_cap[df_cap.iloc[:, 0] == target_year]
-            if not match.empty:
-                return float(match.iloc[0, 1])
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ 讀取薪資帽檔案時發生錯誤，使用預設值。({e})")
-
-    if target_year in base_caps:
-        return base_caps[target_year]
-    elif target_year > 2024:
-        years_ahead = target_year - 2024
-        return base_caps[2024] * (1.10 ** years_ahead)
-    else:
-        return 100000000 
-
-# ── 讀取資料 ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=600)
-def load_prediction_data() -> pd.DataFrame:
-    db_url = st.secrets.get("DATABASE_URL") or os.environ.get("DATABASE_URL")
-    if not db_url:
-        st.error("找不到資料庫連線字串 (DATABASE_URL)。")
+    # 假設 2 (防呆)：如果你哪天把 dashboard.py 移到了專案根目錄
+    if not os.path.exists(models_dir):
+        models_dir = os.path.abspath(os.path.join(current_dir, 'src', 'models'))
+        
+    pricing_path = os.path.join(models_dir, 'pricing_model.pkl')
+    explainer_path = os.path.join(models_dir, 'shap_explainer.pkl')
+    
+    try:
+        with open(pricing_path, 'rb') as f:
+            pricing_model = pickle.load(f)
+        with open(explainer_path, 'rb') as f:
+            shap_explainer = pickle.load(f)
+        return pricing_model, shap_explainer
+    except Exception as e:
+        # 把找錯的路徑印在網頁上，方便 Debug
+        st.error(f"模型載入失敗！\n系統嘗試尋找的路徑為: `{pricing_path}`\n錯誤訊息: {e}")
         st.stop()
 
-    engine = create_engine(db_url)
-    
-    # [新增] 把 key_features 撈出來，裡面會裝 SHAP 拆解數據
-    query = """
-        SELECT player_name, stat_year, pure_skill_pct, key_features
-        FROM historical_predictions
-    """
-    df = pd.read_sql(query, engine)
-    return df
+# ==========================================
+# 2. 資料獲取函式
+# ==========================================
+# ==========================================
+# 2. 資料獲取函式 (安全連線版)
+# ==========================================
+@st.cache_data(ttl=3600)
+def get_available_players():
+    # 每次呼叫前，安全獲取快取中的 supabase 客戶端
+    client = init_supabase()
+    response = client.table('historical_predictions').select('player_name').execute()
+    players = list(set([row['player_name'].title() for row in response.data]))
+    return sorted(players)
 
-try:
-    with st.spinner("正在從資料庫載入歷史特徵庫..."):
-        df_preds = load_prediction_data()
-except Exception as e:
-    st.error(f"載入資料失敗: {e}")
+@st.cache_data(ttl=3600)
+def get_player_years(player_name: str):
+    client = init_supabase()
+    response = client.table('historical_predictions')\
+        .select('stat_year')\
+        .eq('player_name', player_name.lower())\
+        .execute()
+    years = [row['stat_year'] for row in response.data]
+    return sorted(years, reverse=True)
+
+@st.cache_data(ttl=3600)
+def get_player_data(player_name: str, year: int):
+    client = init_supabase()
+    response = client.table('historical_predictions')\
+        .select('*')\
+        .eq('player_name', player_name.lower())\
+        .eq('stat_year', year)\
+        .execute()
+    if response.data:
+        return response.data[0]
+    return None
+
+# ==========================================
+# 3. 側邊欄：總管沙盤推演參數設定
+# ==========================================
+st.sidebar.title("⚙️ 模擬器參數設定")
+
+available_players = get_available_players()
+if not available_players:
+    st.warning("資料庫中尚無球員資料，請先執行 batch_inference.py")
     st.stop()
 
-if df_preds.empty:
-    st.warning("目前資料庫中沒有球員資料。")
+selected_player = st.sidebar.selectbox("1️⃣ 球員名稱", available_players)
+
+available_years = get_player_years(selected_player)
+selected_skill_year = st.sidebar.selectbox("2️⃣ 實力年份 (客觀實力基準)", available_years)
+
+# 抓取該球員當年的資料與「特徵 DNA」
+player_data = get_player_data(selected_player, selected_skill_year)
+if not player_data:
+    st.error("無法取得該球員的特徵資料！")
     st.stop()
 
-# ── 側邊欄篩選器 ──────────────────────────────────────────────────────────────
-st.sidebar.header("⚙️ 模擬器參數設定")
+original_team = player_data.get('team', 'Unknown')
+raw_features = player_data['key_features'].get('model_features', {})
 
-unique_players = sorted(df_preds["player_name"].unique().tolist())
-selected_player = st.sidebar.selectbox("1️⃣ 球員名稱", unique_players)
-
-player_data = df_preds[df_preds["player_name"] == selected_player]
-available_years = sorted(player_data["stat_year"].unique().tolist(), reverse=True)
-selected_year = st.sidebar.selectbox("2️⃣ 球員實力年分", available_years)
+if not raw_features:
+    st.error("此筆資料缺乏 'model_features' (特徵 DNA)，請確保 batch_inference.py 有正確上傳。")
+    st.stop()
 
 st.sidebar.markdown("---")
-target_eras = list(range(2024, 2031))
-selected_era = st.sidebar.selectbox("3️⃣ 預估年代 (Target Era)", target_eras)
-analyze_button = st.sidebar.button("🚀 進行跨時空估值", use_container_width=True)
+st.sidebar.subheader("未來的市場環境設定")
 
-# ── 處理估值邏輯與視覺化 ───────────────────────────────────────────────────
-if analyze_button:
-    target_cap = get_salary_cap(selected_era)
-    specific_data = player_data[player_data["stat_year"] == selected_year]
+destination_team = st.sidebar.selectbox(
+    "3️⃣ 目標球隊", 
+    NBA_TEAMS, 
+    index=NBA_TEAMS.index(original_team) if original_team in NBA_TEAMS else 0
+)
+
+is_retained = st.sidebar.checkbox(
+    "4️⃣ 是否以鳥權續約？(母隊加成)", 
+    value=(destination_team == original_team)
+)
+
+estimation_year = st.sidebar.selectbox(
+    "5️⃣ 預估薪資帽年份", 
+    list(SALARY_CAPS.keys()), 
+    index=list(SALARY_CAPS.keys()).index(2026)  # 預設為最新年份
+)
+
+# ==========================================
+# 4. 即時推論邏輯 (Dynamic Inference)
+# ==========================================
+# 把 JSON 特徵轉回 DataFrame
+X_infer = pd.DataFrame([raw_features])
+X_infer.columns = X_infer.columns.astype(str) # 強制轉字串防報錯
+
+# 🏀 [動態修改特徵]
+# 1. 洗掉所有舊的球隊特徵
+team_cols = [c for c in X_infer.columns if c.startswith('Team_')]
+for c in team_cols:
+    X_infer[c] = 0
+
+# 2. 注入新的目標球隊與鳥權狀態
+target_team_col = f"Team_{destination_team}"
+if target_team_col in X_infer.columns:
+    X_infer[target_team_col] = 1
+
+X_infer['is_retained'] = 1 if is_retained else 0
+
+# 🚀 [現場推論]
+# 🚀 [現場推論]
+pricing_model, shap_explainer = load_models()
+
+# 🚨 [修復重點]：強制將 X_infer 的欄位順序對齊模型訓練時的標準順序
+expected_cols = pricing_model.feature_names_in_
+
+# 防呆機制：確保所有模型需要的欄位都在，缺少的補 0
+for col in expected_cols:
+    if col not in X_infer.columns:
+        X_infer[col] = 0
+
+# 強制對齊欄位順序
+X_infer = X_infer[expected_cols]
+
+# 執行預測
+predicted_cap_pct = pricing_model.predict(X_infer)[0]
+estimated_salary = predicted_cap_pct * SALARY_CAPS[estimation_year]
+
+# ==========================================
+# 5. 主畫面：結果展示與視覺化
+# ==========================================
+st.title("🏀 NBA 跨時空 Moneyball 薪資模擬器")
+st.markdown("透過 XGBoost 與 SHAP 剝離歷史市場雜訊，將球員的「純粹籃球實力」無縫轉換至現代或未來的薪資體系。")
+
+st.markdown(f"### 📊 {selected_player} ({selected_skill_year} 實力) ➡️ {destination_team} 身價解析")
+
+col1, col2 = st.columns(2)
+with col1:
+    st.info("🎯 AI 判定：目標市場薪資帽佔比")
+    st.metric(label="預估佔比 (Cap Pct)", value=f"{predicted_cap_pct * 100:.2f}%")
+
+with col2:
+    st.success(f"💰 跨時空換算：{estimation_year} 賽季年薪")
+    st.metric(
+        label=f"在 ${SALARY_CAPS[estimation_year]:,.0f} 薪資帽下的絕對薪資", 
+        value=f"${estimated_salary:,.0f}"
+    )
+
+st.markdown("---")
+st.subheader("🧬 薪資估值拆解 (即時 SHAP Waterfall Analysis)")
+
+with st.spinner("正在生成 SHAP 瀑布圖..."):
+    # 現場生成 SHAP 解釋
+    shap_values_obj = shap_explainer(X_infer)
     
-    if not specific_data.empty:
-        pure_skill_pct = specific_data.iloc[0]["pure_skill_pct"]
-        projected_salary = pure_skill_pct * target_cap
-        
-        st.header(f"📊 {selected_player} ({selected_year} 實力) ➡️ {selected_era} 年代身價解析")
-        
-        # 上半部：核心指標
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info("🎯 **AI 判定：純粹籃球實力佔比**")
-            st.metric(label="剔除市場雜訊後的薪資帽佔比", value=f"{pure_skill_pct:.1%}")
-            
-        with col2:
-            st.success(f"💰 **跨時空換算：{selected_era} 賽季年薪**")
-            st.metric(
-                label=f"在 ${target_cap/1000000:.1f}M 薪資帽下的絕對薪資", 
-                value=f"${projected_salary:,.0f}",
-                delta=f"套用 CBA 10% 規則" if selected_era > 2024 else None
-            )
-        
-        st.divider()
-        
-        # ── 下半部：SHAP 瀑布圖 ──
-        st.subheader("🧬 薪資估值拆解 (SHAP Waterfall Analysis)")
-        
-        # 嘗試解析資料庫裡的 key_features
-        raw_features = specific_data.iloc[0].get("key_features")
-        if isinstance(raw_features, str):
-            try:
-                features_dict = json.loads(raw_features)
-            except:
-                features_dict = {}
-        else:
-            features_dict = raw_features or {}
-            
-        # 檢查是否有完整的 shap_values 欄位，沒有的話先給一組超逼真的預設值讓你看 UI
-        base_value = features_dict.get("base_pct", 0.08)  # 預設聯盟底薪/平均佔比
-        shap_values = features_dict.get("shap_values", {
-            "PTS_reg (例行賽得分)": 0.045,
-            "has_playoff_exp (季後賽經驗)": 0.021,
-            "MAJOR_INJURY_health (重大傷病)": -0.018,
-            "Age (年紀折損)": -0.012,
-            "AST_reg (例行賽助攻)": 0.009
-        })
-        
-        # 準備 Plotly 瀑布圖的資料結構
-        measure = ["absolute"] + ["relative"] * len(shap_values) + ["total"]
-        x_labels = ["基礎身價 (Base)"] + list(shap_values.keys()) + ["最終估值 (Final)"]
-        y_values = [base_value] + list(shap_values.values()) + [pure_skill_pct]
-        
-        # 將數值轉成帶有正負號的百分比字串，顯示在圖表上
-        text_labels = [f"{v:.1%}" if i==0 or i==len(y_values)-1 else f"{'+' if v>0 else ''}{v:.1%}" for i, v in enumerate(y_values)]
-        
-        # 建立 Plotly Waterfall 
-        fig = go.Figure(go.Waterfall(
-            name = "SHAP 拆解",
-            orientation = "v",
-            measure = measure,
-            x = x_labels,
-            textposition = "outside",
-            text = text_labels,
-            y = y_values,
-            connector = {"line": {"color": "rgba(63, 63, 63, 0.5)"}},
-            decreasing = {"marker": {"color": "#FF4B4B"}}, # 扣分用紅色
-            increasing = {"marker": {"color": "#00CC96"}}, # 加分用綠色
-            totals = {"marker": {"color": "#636EFA"}}      # 總結用藍色
-        ))
-        
-        fig.update_layout(
-            title = f"{selected_player} 薪資特徵影響力貢獻圖",
-            waterfallgap = 0.3,
-            height = 500,
-            margin=dict(l=20, r=20, t=50, b=20)
-        )
-        # 隱藏 Y 軸數值讓畫面更乾淨
-        fig.update_yaxes(showticklabels=False, title_text="")
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # ── 總結 ──
-        st.markdown(f"""
-        ### 📝 GM 決策洞察 (Decision Insight)
-        根據系統的 **SHAP 歸因分析**，我們可以看到 {selected_player} 最終能拿到 **{pure_skill_pct:.1%}** 薪資佔比的原因。
-        綠色柱子代表為他爭取到更大合約的優勢，紅色柱子則是市場對他扣分的風險因子。
-        """)
-    else:
-        st.error("系統異常：找不到對應的資料點。")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # 為了讓暗色主題好看，設定一些 matplotlib 參數
+    plt.style.use('dark_background')
+    
+    # 畫出瀑布圖
+    shap.plots.waterfall(shap_values_obj[0], max_display=10, show=False)
+    
+    plt.title(f"Dynamic Salary Valuation Breakdown: {selected_player}", fontsize=14, pad=20)
+    plt.tight_layout()
+    
+    st.pyplot(fig)
+    
+st.caption("說明：紅色柱狀體代表推升身價的正向特徵，藍色則為扣分項目。最下方的 f(x) 為模型最終輸出的薪資佔比預測值。")

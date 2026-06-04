@@ -136,7 +136,7 @@ Thumbs.db
 # Project-specific
 data/raw/*.csv
 data/raw/*.xlsx
-models/*.pkl
+#models/*.pkl
 *.tmp
 .streamlit/
 credentials.toml

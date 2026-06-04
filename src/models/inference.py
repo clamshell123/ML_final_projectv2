@@ -73,6 +73,18 @@ class SalaryValuationEngine:
         total_market_salary = total_pred_pct * cap_limit
         noise_premium = noise_impact * cap_limit
 
+        # 5. 萃取 Top 5 SHAP 影響力特徵
+        # 將特徵名稱與算出來的 SHAP 值配對
+        feature_names = X_database.columns.tolist()
+        shap_dict = dict(zip(feature_names, player_shap))
+        
+        # 按照「絕對值」排序，找出對薪資影響力最大的前 5 個特徵
+        sorted_features = sorted(shap_dict.items(), key=lambda item: abs(item[1]), reverse=True)
+        
+        # 轉成字典，並確保數值是標準的 float (避免 JSON 序列化報錯)
+        top_5_shap = {k: float(v) for k, v in sorted_features[:5]}
+        # ==========================================
+
         # 5. 回傳給前端的 JSON 格式資料
         return {
             "player": player_name.title(),
@@ -83,7 +95,8 @@ class SalaryValuationEngine:
                 "base_pct": float(base_value),
                 "pure_skill_pct": float(pure_skill_pct),
                 "market_noise_pct": float(noise_impact),
-                "total_pct": float(total_pred_pct)
+                "total_pct": float(total_pred_pct),
+                "shap_values": top_5_shap  # <=== 把 Top 5 塞進這裡！
             },
             "money_usd": {
                 "pure_skill_salary": int(pure_skill_salary),

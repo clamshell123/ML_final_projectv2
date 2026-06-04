@@ -9,3 +9,5 @@ matplotlib>=3.7.0
 seaborn>=0.13.0
 sqlalchemy
 psycopg2-binary
+supabase
+python-dotenv>=1.0.0

@@ -33,35 +33,55 @@ def process_and_upload_batch(csv_path: str):
     print(f"📦 開始處理批量資料: {csv_path}")
     df = pd.read_csv(csv_path)
     
+    # 在 One-Hot 破壞原本的 Team 欄位之前，先把身分證跟球隊抽出來保護好
+    if 'Team' in df.columns:
+        ids_database = df[['Player', 'year', 'Team']].copy()
+    else:
+        ids_database = df[['Player', 'year']].copy()
+        ids_database['Team'] = 'Unknown'
+
     # ==========================================
-    # 1. 特徵對齊：補齊歷史資料沒有的欄位
+    # 🌟 執行類別特徵 One-Hot Encoding
     # ==========================================
+    if 'Team' in df.columns and 'Pos' in df.columns:
+        print("🔄 正在進行球隊與位置的 One-Hot Encoding 轉換...")
+        df = pd.get_dummies(df, columns=['Team', 'Pos'], drop_first=False)
+        bool_cols = df.select_dtypes(include=['bool']).columns
+        df[bool_cols] = df[bool_cols].astype(int)
+    
+    # 補齊歷史資料可能沒有的欄位
     if 'GS_reg' not in df.columns:
         df['GS_reg'] = 0
-        
     if 'GS_playoff' not in df.columns:
         df['GS_playoff'] = 0
     
-    # 2. 移除不要的標籤
+    # 移除不要的標籤，分離出特徵矩陣
     X_database = df.drop(columns=['Player', 'year', 'Cap_Pct', 'YRS'], errors='ignore')
-    ids_database = df[['Player', 'year']]
     
     # ==========================================
-    # 3. [終極修正] 強制對齊欄位順序 (Fix for Order Mismatch)
-    # 從 XGBoost 模型中抽出當初訓練的欄位藍圖，強制洗牌
+    # 🌟 防呆機制，補齊模型需要但可能缺失的 Dummy 欄位
     # ==========================================
-    expected_cols = engine.pricing_model.feature_names_in_
+    expected_cols = [str(c) for c in engine.pricing_model.feature_names_in_]
+    X_database.columns = [str(c) for c in X_database.columns]
+    
+    for col in expected_cols:
+        if col not in X_database.columns:
+            X_database[col] = 0
+            
+    # 強制對齊欄位順序 
     X_database = X_database[expected_cols] 
     
     success_count = 0
     records_to_upload = []
 
     # 4. 逐筆進行推論
+    print("🚀 開始逐筆進行估值與建立特徵字典...")
     for index, row in ids_database.iterrows():
         player_name = row['Player']
         stat_year = int(row['year'])
+        player_team = row['Team']
         
-        # 呼叫推論引擎
+        # 呼叫推論引擎 (這裡算出來的會是預設母隊的純實力佔比)
         result = engine.predict_player_value(
             player_name=player_name, 
             target_year=stat_year, 
@@ -73,19 +93,41 @@ def process_and_upload_batch(csv_path: str):
             print(f"⚠️ 略過 {player_name} ({stat_year}): {result['error']}")
             continue
             
-        # 構建 Supabase 需要的 Payload
         pure_skill_pct = result['valuation']['pure_skill_pct']
         player_id = f"{player_name.replace(' ', '_').lower()}_{stat_year}"
+        shap_values = result['valuation'].get('shap_values')
         
+        if not shap_values:
+            shap_values = {
+                "PTS_reg (展示用)": 0.035,
+                "TRB_reg (展示用)": 0.015,
+                "has_playoff_exp (展示用)": 0.012,
+                "Age (展示用)": -0.018,
+                "TOV_reg (展示用)": -0.008
+            }
+
+        # 🚨 [終極殺招] 提取該球員在模型裡的 100% 完整特徵字典！
+        # UI 拿去後，只要修改裡面的值就能無限次動態推論
+        player_features_dict = X_database.loc[index].to_dict()
+
         record = {
             "player_id": player_id,
             "player_name": player_name,
             "stat_year": stat_year,
+            "team": player_team,
             "pure_skill_pct": pure_skill_pct,
-            "key_features": {"base_pct": result['valuation']['base_pct']} 
+            "key_features": {
+                "base_pct": result['valuation']['base_pct'],
+                "shap_values": shap_values,
+                "model_features": player_features_dict # <=== 動態模擬的關鍵彈藥庫！
+            } 
         }
-        records_to_upload.append(record)
         
+        records_to_upload.append(record)
+
+        if (index + 1) % 50 == 0:
+            print(f"⏳ 已處理 {index + 1} 筆資料...")
+
         # 每 100 筆批次上傳
         if len(records_to_upload) >= 100:
             try:
