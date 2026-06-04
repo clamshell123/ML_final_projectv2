@@ -66,10 +66,9 @@ else:
     selected_player = st.sidebar.selectbox("1️⃣ 球員名稱", unique_players)
     
     # (2) 根據選定的球員，動態過濾出他擁有的數據年份
-    available_years = sorted(
-        [p['stat_year'] for p in players_data if p['player_name'] == selected_player], 
-        reverse=True
-    )
+    raw_years = [p['stat_year'] for p in players_data if p['player_name'] == selected_player]
+    available_years = sorted(list(set(raw_years)), reverse=True)
+    
     selected_year = st.sidebar.selectbox("2️⃣ 球員實力年分", available_years)
     
     # (3) 預估年代 (支援當前賽季至未來 5 年)

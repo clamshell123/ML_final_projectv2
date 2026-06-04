@@ -64,7 +64,7 @@ def predict_salary(request: ValuationRequest):
 def get_available_players():
     try:
         # 只撈取姓名與年份，讓前端可以建立動態選單
-        response = supabase.table('historical_predictions').select("player_name, stat_year").execute()
+        response = supabase.table('historical_predictions').select("player_name, stat_year").limit(50000).execute()
         return {"players": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

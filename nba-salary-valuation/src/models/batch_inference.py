@@ -33,19 +33,35 @@ def process_and_upload_batch(csv_path: str):
     print(f"📦 開始處理批量資料: {csv_path}")
     df = pd.read_csv(csv_path)
     
-    # 切分特徵矩陣與識別碼
+    # ==========================================
+    # 1. 特徵對齊：補齊歷史資料沒有的欄位
+    # ==========================================
+    if 'GS_reg' not in df.columns:
+        df['GS_reg'] = 0
+        
+    if 'GS_playoff' not in df.columns:
+        df['GS_playoff'] = 0
+    
+    # 2. 移除不要的標籤
     X_database = df.drop(columns=['Player', 'year', 'Cap_Pct', 'YRS'], errors='ignore')
     ids_database = df[['Player', 'year']]
+    
+    # ==========================================
+    # 3. [終極修正] 強制對齊欄位順序 (Fix for Order Mismatch)
+    # 從 XGBoost 模型中抽出當初訓練的欄位藍圖，強制洗牌
+    # ==========================================
+    expected_cols = engine.pricing_model.feature_names_in_
+    X_database = X_database[expected_cols] 
     
     success_count = 0
     records_to_upload = []
 
-    # 3. 逐筆進行推論 (若資料量極大，實務上可改寫為矩陣運算)
+    # 4. 逐筆進行推論
     for index, row in ids_database.iterrows():
         player_name = row['Player']
         stat_year = int(row['year'])
         
-        # 呼叫我們的推論引擎
+        # 呼叫推論引擎
         result = engine.predict_player_value(
             player_name=player_name, 
             target_year=stat_year, 
@@ -57,11 +73,8 @@ def process_and_upload_batch(csv_path: str):
             print(f"⚠️ 略過 {player_name} ({stat_year}): {result['error']}")
             continue
             
-        # 4. 構建 Supabase 需要的 Payload 格式
-        # 我們只提取純實力佔比，因為這是跨時空估值的核心
+        # 構建 Supabase 需要的 Payload
         pure_skill_pct = result['valuation']['pure_skill_pct']
-        
-        # 建立複合主鍵，避免重複寫入
         player_id = f"{player_name.replace(' ', '_').lower()}_{stat_year}"
         
         record = {
@@ -69,22 +82,21 @@ def process_and_upload_batch(csv_path: str):
             "player_name": player_name,
             "stat_year": stat_year,
             "pure_skill_pct": pure_skill_pct,
-            # 這裡可以儲存重要的 SHAP 特徵，先放個示意結構
             "key_features": {"base_pct": result['valuation']['base_pct']} 
         }
         records_to_upload.append(record)
         
-        # 每 100 筆批次上傳一次，避免 Payload 過大
+        # 每 100 筆批次上傳
         if len(records_to_upload) >= 100:
             try:
                 data, count = supabase.table('historical_predictions').upsert(records_to_upload).execute()
                 success_count += len(records_to_upload)
                 print(f"✅ 已成功 Upsert {success_count} 筆資料...")
-                records_to_upload = [] # 清空暫存區
+                records_to_upload = [] 
             except Exception as e:
                 print(f"❌ 上傳失敗: {e}")
                 
-    # 處理剩餘未滿 100 筆的尾數
+    # 處理尾數
     if records_to_upload:
         try:
             data, count = supabase.table('historical_predictions').upsert(records_to_upload).execute()
@@ -94,6 +106,5 @@ def process_and_upload_batch(csv_path: str):
             print(f"❌ 最後一批上傳失敗: {e}")
 
 if __name__ == "__main__":
-    # 先用我們現有的 processed 資料測試管線
-    target_csv = os.path.join(BASE_DIR, 'data', 'processed', 'featured_nba_data.csv')
+    target_csv = os.path.join(BASE_DIR, 'data', 'processed', 'historical_legends_features.csv')
     process_and_upload_batch(target_csv)
