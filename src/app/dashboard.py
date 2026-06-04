@@ -204,6 +204,28 @@ st.markdown("透過 XGBoost 與 SHAP 剝離歷史市場雜訊，將球員的「�
 
 st.markdown(f"### 📊 {selected_player} ({selected_skill_year} 實力) ➡️ {destination_team} 身價解析")
 
+# 🌟 [新增區塊]：基礎賽季數據概覽
+# 從剛剛讀取下來的 raw_features 裡面直接抽出傳統數據 (找不到則預設為 0)
+pts = raw_features.get('PTS_reg', 0)
+trb = raw_features.get('TRB_reg', 0)
+ast = raw_features.get('AST_reg', 0)
+mp = raw_features.get('MP_reg', 0)
+ts_pct = raw_features.get('TS%_reg', 0) * 100  # 轉為百分比
+ws = raw_features.get('WS_reg', 0)
+
+# 使用 st.columns 排版，並用 st.metric 呈現漂亮的數字卡片
+st.markdown("##### ⛹️‍♂️ 該年度例行賽表現 (時間加權後基準)")
+metric_cols = st.columns(6)
+metric_cols[0].metric("得分 (PTS)", f"{pts:.1f}")
+metric_cols[1].metric("籃板 (TRB)", f"{trb:.1f}")
+metric_cols[2].metric("助攻 (AST)", f"{ast:.1f}")
+metric_cols[3].metric("上場時間 (MP)", f"{mp:.1f}")
+metric_cols[4].metric("真實命中率", f"{ts_pct:.1f}%")
+metric_cols[5].metric("勝利貢獻 (WS)", f"{ws:.1f}")
+
+st.markdown("---")
+
+# 接著是原本的 AI 估值區塊
 col1, col2 = st.columns(2)
 with col1:
     st.info("🎯 AI 判定：目標市場薪資帽佔比")
