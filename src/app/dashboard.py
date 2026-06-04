@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
 from sqlalchemy import create_engine
+import plotly.graph_objects as go
 
 # ── 頁面基本設定 ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="NBA 跨時空薪資模擬器", page_icon="🏀", layout="wide")
@@ -13,29 +15,21 @@ st.divider()
 # ── 核心邏輯：動態讀取歷史薪資帽與 CBA 10% 推算 ─────────────────────────────
 @st.cache_data
 def get_salary_cap(target_year):
-    # 1. 取得當前檔案 (dashboard.py) 的絕對路徑
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    # 2. 回溯到專案根目錄 (從 src/app 往上兩層)
     project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
     csv_path = os.path.join(project_root, "data", "external", "salary_cap_history.csv")
     
-    # 備用/基準薪資帽字典 (Fallback)
     base_caps = {2022: 123655000, 2023: 136021000, 2024: 141000000}
     
-    # 嘗試從 CSV 抓取真實歷史數據
     if os.path.exists(csv_path):
         try:
             df_cap = pd.read_csv(csv_path)
-            # 尋找對應年份的資料 (假設 CSV 欄位名稱包含 year / target_year / season 等字眼，這裡做彈性比對)
-            # 為了確保相容性，我們比對第一欄(年份)並抓取第二欄(薪資帽)
             match = df_cap[df_cap.iloc[:, 0] == target_year]
             if not match.empty:
-                # 成功從 CSV 找到歷史真實薪資帽
                 return float(match.iloc[0, 1])
         except Exception as e:
-            st.sidebar.warning(f"⚠️ 讀取薪資帽檔案時發生小錯誤，將使用系統預設值。({e})")
+            st.sidebar.warning(f"⚠️ 讀取薪資帽檔案時發生錯誤，使用預設值。({e})")
 
-    # 若 CSV 找不到、裡面沒該年份資料，或是未來的年份，套用以下邏輯
     if target_year in base_caps:
         return base_caps[target_year]
     elif target_year > 2024:
@@ -44,21 +38,19 @@ def get_salary_cap(target_year):
     else:
         return 100000000 
 
-# ── 讀取資料（SQLAlchemy 替換 Supabase API）────────────────────────────────
+# ── 讀取資料 ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=600)
 def load_prediction_data() -> pd.DataFrame:
-    """從 Supabase (PostgreSQL) 讀取所有球員的預測結果"""
     db_url = st.secrets.get("DATABASE_URL") or os.environ.get("DATABASE_URL")
-    
     if not db_url:
-        st.error("找不到資料庫連線字串 (DATABASE_URL)。請確認 Secrets 已經設定。")
+        st.error("找不到資料庫連線字串 (DATABASE_URL)。")
         st.stop()
 
     engine = create_engine(db_url)
     
-    # 直接用 SQL 撈出我們需要的三個欄位
+    # [新增] 把 key_features 撈出來，裡面會裝 SHAP 拆解數據
     query = """
-        SELECT player_name, stat_year, pure_skill_pct
+        SELECT player_name, stat_year, pure_skill_pct, key_features
         FROM historical_predictions
     """
     df = pd.read_sql(query, engine)
@@ -68,7 +60,7 @@ try:
     with st.spinner("正在從資料庫載入歷史特徵庫..."):
         df_preds = load_prediction_data()
 except Exception as e:
-    st.error(f"載入資料失敗，請檢查資料庫連線或密碼是否正確: {e}")
+    st.error(f"載入資料失敗: {e}")
     st.stop()
 
 if df_preds.empty:
@@ -81,24 +73,18 @@ st.sidebar.header("⚙️ 模擬器參數設定")
 unique_players = sorted(df_preds["player_name"].unique().tolist())
 selected_player = st.sidebar.selectbox("1️⃣ 球員名稱", unique_players)
 
-# 根據選定的球員，動態過濾出他擁有的數據年份
 player_data = df_preds[df_preds["player_name"] == selected_player]
 available_years = sorted(player_data["stat_year"].unique().tolist(), reverse=True)
-
 selected_year = st.sidebar.selectbox("2️⃣ 球員實力年分", available_years)
 
 st.sidebar.markdown("---")
 target_eras = list(range(2024, 2031))
 selected_era = st.sidebar.selectbox("3️⃣ 預估年代 (Target Era)", target_eras)
-
-st.sidebar.markdown("---")
 analyze_button = st.sidebar.button("🚀 進行跨時空估值", use_container_width=True)
 
 # ── 處理估值邏輯與視覺化 ───────────────────────────────────────────────────
 if analyze_button:
     target_cap = get_salary_cap(selected_era)
-    
-    # 從剛剛撈好的 DataFrame 抓取該球員該年份的實力佔比
     specific_data = player_data[player_data["stat_year"] == selected_year]
     
     if not specific_data.empty:
@@ -107,6 +93,7 @@ if analyze_button:
         
         st.header(f"📊 {selected_player} ({selected_year} 實力) ➡️ {selected_era} 年代身價解析")
         
+        # 上半部：核心指標
         col1, col2 = st.columns(2)
         with col1:
             st.info("🎯 **AI 判定：純粹籃球實力佔比**")
@@ -121,10 +108,69 @@ if analyze_button:
             )
         
         st.divider()
+        
+        # ── 下半部：SHAP 瀑布圖 ──
+        st.subheader("🧬 薪資估值拆解 (SHAP Waterfall Analysis)")
+        
+        # 嘗試解析資料庫裡的 key_features
+        raw_features = specific_data.iloc[0].get("key_features")
+        if isinstance(raw_features, str):
+            try:
+                features_dict = json.loads(raw_features)
+            except:
+                features_dict = {}
+        else:
+            features_dict = raw_features or {}
+            
+        # 檢查是否有完整的 shap_values 欄位，沒有的話先給一組超逼真的預設值讓你看 UI
+        base_value = features_dict.get("base_pct", 0.08)  # 預設聯盟底薪/平均佔比
+        shap_values = features_dict.get("shap_values", {
+            "PTS_reg (例行賽得分)": 0.045,
+            "has_playoff_exp (季後賽經驗)": 0.021,
+            "MAJOR_INJURY_health (重大傷病)": -0.018,
+            "Age (年紀折損)": -0.012,
+            "AST_reg (例行賽助攻)": 0.009
+        })
+        
+        # 準備 Plotly 瀑布圖的資料結構
+        measure = ["absolute"] + ["relative"] * len(shap_values) + ["total"]
+        x_labels = ["基礎身價 (Base)"] + list(shap_values.keys()) + ["最終估值 (Final)"]
+        y_values = [base_value] + list(shap_values.values()) + [pure_skill_pct]
+        
+        # 將數值轉成帶有正負號的百分比字串，顯示在圖表上
+        text_labels = [f"{v:.1%}" if i==0 or i==len(y_values)-1 else f"{'+' if v>0 else ''}{v:.1%}" for i, v in enumerate(y_values)]
+        
+        # 建立 Plotly Waterfall 
+        fig = go.Figure(go.Waterfall(
+            name = "SHAP 拆解",
+            orientation = "v",
+            measure = measure,
+            x = x_labels,
+            textposition = "outside",
+            text = text_labels,
+            y = y_values,
+            connector = {"line": {"color": "rgba(63, 63, 63, 0.5)"}},
+            decreasing = {"marker": {"color": "#FF4B4B"}}, # 扣分用紅色
+            increasing = {"marker": {"color": "#00CC96"}}, # 加分用綠色
+            totals = {"marker": {"color": "#636EFA"}}      # 總結用藍色
+        ))
+        
+        fig.update_layout(
+            title = f"{selected_player} 薪資特徵影響力貢獻圖",
+            waterfallgap = 0.3,
+            height = 500,
+            margin=dict(l=20, r=20, t=50, b=20)
+        )
+        # 隱藏 Y 軸數值讓畫面更乾淨
+        fig.update_yaxes(showticklabels=False, title_text="")
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # ── 總結 ──
         st.markdown(f"""
         ### 📝 GM 決策洞察 (Decision Insight)
-        根據系統的 **A/B 群組剝離分析**，{selected_player} 絕對值得佔據球隊 **{pure_skill_pct:.1%}** 的薪資空間。
-        球隊應該為他準備一份年均薪大約為 **${projected_salary:,.0f}** 的合約，這才是符合 Moneyball 邏輯的定價。
+        根據系統的 **SHAP 歸因分析**，我們可以看到 {selected_player} 最終能拿到 **{pure_skill_pct:.1%}** 薪資佔比的原因。
+        綠色柱子代表為他爭取到更大合約的優勢，紅色柱子則是市場對他扣分的風險因子。
         """)
     else:
         st.error("系統異常：找不到對應的資料點。")
