@@ -181,7 +181,6 @@ estimation_year = st.sidebar.selectbox(
 X_infer = pd.DataFrame([raw_features])
 X_infer.columns = X_infer.columns.astype(str) # 強制轉字串防報錯
 
-# 🏀 [動態修改特徵]
 # 1. 洗掉所有舊的球隊特徵
 team_cols = [c for c in X_infer.columns if c.startswith('Team_')]
 for c in team_cols:
@@ -194,10 +193,10 @@ if target_team_col in X_infer.columns:
 
 X_infer['is_retained'] = 1 if is_retained else 0
 
-# 🚀 [現場推論]
+# 現場推論
 pricing_model, shap_explainer = load_models()
 
-# 🚨 [修復重點]：強制將 X_infer 的欄位順序對齊模型訓練時的標準順序
+# 強制將 X_infer 的欄位順序對齊模型訓練時的標準順序
 expected_cols = pricing_model.feature_names_in_
 
 # 防呆機制：確保所有模型需要的欄位都在，缺少的補 0
@@ -215,10 +214,10 @@ estimated_salary = predicted_cap_pct * SALARY_CAPS[estimation_year]
 # ==========================================
 # 5. 主畫面：結果展示與視覺化
 # ==========================================
-st.title("🏀 NBA 跨時空 Moneyball 薪資模擬器")
+st.title("NBA 跨時空 Moneyball 薪資模擬器")
 st.markdown("透過 XGBoost 與 SHAP 剝離歷史市場雜訊，將球員的「純粹籃球實力」無縫轉換至現代或未來的薪資體系。")
 
-st.markdown(f"### 📊 {selected_player} ({selected_skill_year} 實力) ➡️ {destination_team} 身價解析")
+st.markdown(f"### {selected_player} ({selected_skill_year} 實力) ➡️ {destination_team} 身價解析")
 
 # 🌟 [新增區塊]：基礎賽季數據概覽
 # 從剛剛讀取下來的 raw_features 裡面直接抽出傳統數據 (找不到則預設為 0)
@@ -230,7 +229,7 @@ ts_pct = raw_features.get('TS%_reg', 0) * 100  # 轉為百分比
 ws = raw_features.get('WS_reg', 0)
 
 # 使用 st.columns 排版，並用 st.metric 呈現漂亮的數字卡片
-st.markdown("##### ⛹️‍♂️ 過去三年綜合表現")
+st.markdown("##### 過去三年綜合表現")
 metric_cols = st.columns(6)
 metric_cols[0].metric("得分 (PTS)", f"{pts:.1f}")
 metric_cols[1].metric("籃板 (TRB)", f"{trb:.1f}")
@@ -244,18 +243,18 @@ st.markdown("---")
 # 接著是原本的 AI 估值區塊
 col1, col2 = st.columns(2)
 with col1:
-    st.info("🎯 AI 判定：目標市場薪資帽佔比")
+    st.info("AI 判定：目標市場薪資帽佔比")
     st.metric(label="預估佔比 (Cap Pct)", value=f"{predicted_cap_pct * 100:.2f}%")
 
 with col2:
-    st.success(f"💰 跨時空換算：{estimation_year} 賽季年薪")
+    st.success(f"跨時空換算：{estimation_year} 賽季年薪")
     st.metric(
         label=f"在 ${SALARY_CAPS[estimation_year]:,.0f} 薪資帽下的絕對薪資", 
         value=f"${estimated_salary:,.0f}"
     )
 
 st.markdown("---")
-st.subheader("🧬 薪資估值拆解 (即時 SHAP Waterfall Analysis)")
+st.subheader("薪資估值拆解 (即時 SHAP Waterfall Analysis)")
 
 with st.spinner("正在生成 SHAP 瀑布圖..."):
     # 現場生成 SHAP 解釋
