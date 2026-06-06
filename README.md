@@ -52,7 +52,6 @@ GM Decision Support Dashboard
 ## 📁 Project Structure
 
 ```
-nba-salary-valuation/
 ├── data/
 │   ├── raw/            # Original datasets (Kaggle, B-Ref)
 │   ├── processed/      # Cleaned & merged datasets
@@ -65,19 +64,10 @@ nba-salary-valuation/
 │   │   └── features.py        # Feature engineering (weighted stats, A/B grouping)
 │   ├── models/
 │   │   ├── train.py           # XGBoost pricing model
-│   │   ├── train_duration.py  # Ordinal LogReg for contract years
-│   │   ├── evaluate.py        # Model evaluation & residual analysis
-│   │   └── projection.py      # CBA 10% cap projection logic
-│   ├── xai/
-│   │   └── shap_explainer.py  # SHAP A/B decomposition
+│   │   └── train_duration.py  # Ordinal LogReg for contract years
 │   └── app/
-│       ├── main.py            # Streamlit home page
-│       └── pages/
-│           ├── player_query.py    # 4-layer response builder
-│           └── simulator.py       # Contract simulator
-├── models/             # Saved model artifacts
+│        └── dashboard.py            # Streamlit home page
 ├── reports/            # Analysis outputs & report drafts
-├── tests/              # Unit tests
 ├── requirements.txt
 ├── environment.yml
 ├── .gitignore
@@ -192,7 +182,7 @@ Layer 4: Multi-Year CBA Projection
 5. **Discussion**: Business value, limitations, future work
 6. **Conclusion**
 
-## 👥 Team Roles (3-Day Sprint)
+## 👥 Team Roles
 
 | Role | Primary Responsibility | Key Deliverables |
 |---|---|---|
@@ -201,20 +191,6 @@ Layer 4: Multi-Year CBA Projection
 | P3 (XAI) | SHAP analysis, A/B decomposition | `shap_explainer.py`, case study visualizations |
 | P4 (Frontend) | Streamlit UI, Contract Simulator | MVP app, live demo |
 | P5 (Report) | Methodology writing, results integration | Full paper, PDF export |
-
-## 📚 Key References
-
-- Berri & Schmidt (2006) - *Stumbling on Wins*
-- Lundberg & Lee (2017) - *A Unified Approach to Interpreting Model Predictions* (SHAP)
-- Hollinger (2003) - *Pro Basketball Forecast* (PER metric)
-- Goldsberry (2019) - *Sprawlball* (3-point revolution)
-- McCullagh (1980) - *Regression models for ordinal data*
-
-## 📧 Contact & Changelog
-
-**Version**: v2.1 (Optimized, instruction.md aligned)  
-**Last Updated**: 2026-06-02  
-**Next Milestone**: Phase 1 completion (Day 1 data collection)
 
 ---
 

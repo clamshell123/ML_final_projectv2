@@ -92,9 +92,7 @@ def load_models():
         st.error(f"模型載入失敗！\n系統嘗試尋找的路徑為: `{pricing_path}`\n錯誤訊息: {e}")
         st.stop()
 
-# ==========================================
-# 2. 資料獲取函式
-# ==========================================
+
 # ==========================================
 # 2. 資料獲取函式 (安全連線版)
 # ==========================================
@@ -196,7 +194,6 @@ if target_team_col in X_infer.columns:
 
 X_infer['is_retained'] = 1 if is_retained else 0
 
-# 🚀 [現場推論]
 # 🚀 [現場推論]
 pricing_model, shap_explainer = load_models()
 

@@ -78,7 +78,6 @@ def resolve_traded_players(df: pd.DataFrame) -> pd.DataFrame:
             team_rows = group[~group['Team'].isin(multi_team_labels)]
             
             if not team_rows.empty:
-                # 抓取該季最後效力的球隊
                 final_team = team_rows['Team'].iloc[-1]
                 df.loc[tot_idx, 'Team'] = final_team
                 
@@ -91,18 +90,16 @@ def resolve_traded_players(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_stats_data(df: pd.DataFrame, min_games: int = 10) -> pd.DataFrame:
-    """專屬 B-Ref 統計數據的清洗邏輯 (強化型別防護)"""
+    """專屬 B-Ref 統計數據的清洗邏輯"""
     df = df.copy()
     df = clean_player_names(df, 'Player')
 
     if 'Player' in df.columns:
         df = df[df['Player'] != 'Player']
 
-    # 確保 year 欄位絕對是整數
     if 'year' in df.columns:
         df['year'] = pd.to_numeric(df['year'], errors='coerce').fillna(0).astype(int)
 
-    # 🚨 [修正重點]：在篩選出場數之前，先解決季中交易球員！
     if 'Team' in df.columns:
         df = resolve_traded_players(df)
 
@@ -111,12 +108,10 @@ def clean_stats_data(df: pd.DataFrame, min_games: int = 10) -> pd.DataFrame:
     
     for col in numeric_cols:
         if col in df.columns:
-            # 移除字串中可能干擾轉換的星號、逗號或空白
             if df[col].dtype == object:
                 df[col] = df[col].astype(str).str.replace(r'[\*\,]', '', regex=True)
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # 🚨 在交易合併後，才執行出場數過濾，確保主力不被誤刪
     if 'G' in df.columns:
         df = df[df['G'] >= min_games]
 
@@ -125,6 +120,7 @@ def clean_stats_data(df: pd.DataFrame, min_games: int = 10) -> pd.DataFrame:
         df[rate_cols] = df[rate_cols].fillna(0)
 
     return df
+
 
 def clean_health_data(df: pd.DataFrame) -> pd.DataFrame:
     """專屬健康數據的清洗邏輯 (無須過濾出賽數)"""
@@ -178,7 +174,7 @@ def compute_weighted_stats(df: pd.DataFrame, player: str, target_year: int, defa
 
 
 def merge_historical_stats(stats_reg_df: pd.DataFrame, stats_playoff_df: pd.DataFrame, health_df: pd.DataFrame) -> pd.DataFrame:
-    """以例行賽出現的 (Player, Year) 為基準進行資料合併"""
+    """以例行賽出現的 (Player, Year) 為基準進行資料合併，包含健康數據"""
     enriched_rows = []
     unique_player_years = stats_reg_df[['Player', 'year']].drop_duplicates()
 
@@ -186,7 +182,6 @@ def merge_historical_stats(stats_reg_df: pd.DataFrame, stats_playoff_df: pd.Data
         player = row['Player']
         yr = int(row['year'])
         
-        # 🚨 [修正重點]：抓出 Age 的同時，一併抓出 Team 和 Pos 供模型編碼使用
         age_sub = stats_reg_df[(stats_reg_df['Player'] == player) & (stats_reg_df['year'] == yr)]
         if not age_sub.empty:
             age = age_sub['Age'].iloc[0]
@@ -199,7 +194,7 @@ def merge_historical_stats(stats_reg_df: pd.DataFrame, stats_playoff_df: pd.Data
 
         wt_reg = compute_weighted_stats(stats_reg_df, player, yr)
         wt_playoff = compute_weighted_stats(stats_playoff_df, player, yr)
-        wt_health = compute_weighted_stats(health_df, player, yr)
+        wt_health = compute_weighted_stats(health_df, player, yr) # 🚨 加入健康加權！
 
         if wt_playoff.isna().all():
             has_playoff_exp = 0 
@@ -209,18 +204,19 @@ def merge_historical_stats(stats_reg_df: pd.DataFrame, stats_playoff_df: pd.Data
 
         wt_reg = wt_reg.add_suffix('_reg')
         wt_playoff = wt_playoff.add_suffix('_playoff')
-        wt_health = wt_health.add_suffix('_health')
+        wt_health = wt_health.add_suffix('_health') # 🚨 健康後綴
 
         new_row = {
             'Player': player,
-            'Team': team, 
-            'Pos': pos,  
+            'Team': team,  
+            'Pos': pos,    
             'year': yr,
             'age': age,
             'has_playoff_exp': has_playoff_exp,
             'is_retained': 0  # 填入 dummy 雜訊
         }
         
+        # 依序把三個領域的特徵放入 Row 中
         for col in wt_reg.index:
             new_row[col] = wt_reg[col]
         for col in wt_playoff.index:
@@ -276,20 +272,18 @@ def run_data_pipeline(raw_reg_stats: pd.DataFrame, raw_playoff_stats: pd.DataFra
     """
     logger.info("開始執行 NBA 歷史資料工程管線...")
     
-    logger.info("1/3 執行資料清洗...")
-
-    # 常規賽與季後賽門檻分開
+    logger.info("1/3 執行資料清洗 (包含健康數據)...")
     clean_reg = clean_stats_data(raw_reg_stats, min_games=10)
     clean_playoff = clean_stats_data(raw_playoff_stats, min_games=2)
-    clean_health = clean_health_data(raw_health_stats)
-
+    clean_health = clean_health_data(raw_health_stats) # 🚨 清洗健康資料
+    
     logger.info("2/3 執行時間加權與資料合併...")
-    merged_df = merge_historical_stats(clean_reg, clean_playoff, clean_health)
+    # 🚨 將健康資料一併傳入合併函式
+    merged_df = merge_historical_stats(clean_reg, clean_playoff, clean_health) 
     
     logger.info("3/3 執行進階特徵工程...")
     final_df = create_interaction_features(merged_df)
     
-    # 將 Team 和 Pos 納入元資料保護區，確保它們出現在最前面
     meta_cols = ['Player', 'Team', 'Pos', 'year', 'age', 'has_playoff_exp', 'is_retained']
     feature_cols = [c for c in final_df.columns if c not in meta_cols]
     final_df = final_df[meta_cols + sorted(feature_cols)]
@@ -297,21 +291,21 @@ def run_data_pipeline(raw_reg_stats: pd.DataFrame, raw_playoff_stats: pd.DataFra
     logger.info(f"✅ 管線執行完成！最終產出資料維度: {final_df.shape}")
     return final_df
 
+
 if __name__ == "__main__":
     logger.info("載入原始資料中...")
     
-    # Load raw data
+    # 🚨 確保加入 health.csv 的讀取路徑
     raw_reg = pd.read_csv('../../data/raw/history_stats_reg.csv', encoding='utf-8')
     raw_playoff = pd.read_csv('../../data/raw/history_stats_playoff.csv', encoding='utf-8')
-    raw_health = pd.read_csv('../../data/raw/nba_attendance_injury_1980_2025.csv', encoding='utf-8')
+    raw_health = pd.read_csv('../../data/raw/health.csv', encoding='utf-8')
 
-    # 執行管線
+    # 執行管線 (加入健康資料)
     final_dataset = run_data_pipeline(raw_reg, raw_playoff, raw_health)
     
     # 將處理好的特徵矩陣存檔，準備餵給 batch_inference.py
     output_path = '../../data/processed/historical_legends_features.csv'
     
-    # 確保資料夾存在
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     final_dataset.to_csv(output_path, index=False, encoding='utf-8-sig')

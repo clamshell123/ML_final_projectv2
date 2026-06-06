@@ -106,8 +106,7 @@ def process_and_upload_batch(csv_path: str):
                 "TOV_reg (展示用)": -0.008
             }
 
-        # 🚨 [終極殺招] 提取該球員在模型裡的 100% 完整特徵字典！
-        # UI 拿去後，只要修改裡面的值就能無限次動態推論
+        # 建立特徵字典
         player_features_dict = X_database.loc[index].to_dict()
 
         record = {
